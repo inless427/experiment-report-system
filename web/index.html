@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>实验报告管理系统</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+
+<!-- 登录视图 -->
+<section id="loginView" class="screen login">
+  <form id="loginForm" class="login-card">
+    <h1>实验报告管理系统</h1>
+    <p class="muted">广州大学 · 数学与信息科学学院</p>
+    <label>用户名<input name="username" required autocomplete="username"></label>
+    <label>密码<input name="password" type="password" required autocomplete="current-password"></label>
+    <button type="submit">登录</button>
+    <small class="muted">学生使用学号登录，初始密码为学号本身，首次登录后需立即修改。</small>
+  </form>
+</section>
+
+<!-- 强制改密视图（首次登录或密码被重置） -->
+<section id="forcePwdView" class="screen login" hidden>
+  <form id="forcePwdForm" class="login-card">
+    <h1>请修改初始密码</h1>
+    <p class="muted">系统检测到您正在使用初始密码，请先设置一个新密码再使用系统。新密码不少于 6 位，且不能与原密码相同。</p>
+    <label>原密码<input name="oldPassword" type="password" required autocomplete="current-password"></label>
+    <label>新密码<input name="newPassword" type="password" required minlength="6" autocomplete="new-password"></label>
+    <label>再次输入新密码<input name="confirmPassword" type="password" required minlength="6" autocomplete="new-password"></label>
+    <button type="submit">修改并进入系统</button>
+    <button type="button" id="forcePwdCancel" class="secondary">退出登录</button>
+  </form>
+</section>
+
+<!-- 主控台 -->
+<section id="appView" class="screen app" hidden>
+  <aside class="sidebar">
+    <div class="brand">
+      <strong>实验报告系统</strong>
+      <span id="brandRole"></span>
+    </div>
+    <nav id="navBar"></nav>
+    <div class="profile">
+      <div>
+        <strong id="profileName"></strong>
+        <small id="profileMeta"></small>
+      </div>
+      <button id="changePwdBtn" class="link">改密</button>
+      <button id="logoutBtn" class="link">退出</button>
+    </div>
+  </aside>
+
+  <main id="mainArea"></main>
+</section>
+
+<!-- 模板：DBA -->
+<template id="tpl-admin">
+  <section class="page">
+    <header class="page-head">
+      <div>
+        <h1>系统概览</h1>
+        <p>查看课程、用户和报告的总体情况。所有关键操作会写入审计日志。</p>
+      </div>
+      <button data-action="refresh-stats" class="secondary">刷新</button>
+    </header>
+
+    <div class="metrics">
+      <article><span>账户</span><strong data-stat="users">0</strong></article>
+      <article><span>教师</span><strong data-stat="teachers">0</strong></article>
+      <article><span>学生</span><strong data-stat="students">0</strong></article>
+      <article><span>课程</span><strong data-stat="courses">0</strong></article>
+      <article><span>实验项目</span><strong data-stat="labs">0</strong></article>
+      <article><span>报告</span><strong data-stat="reports">0</strong></article>
+    </div>
+
+    <div class="split">
+      <section class="panel">
+        <h2>实验项目状态</h2>
+        <div class="status-row"><span>开放</span><b data-stat="openLabs">0</b></div>
+        <div class="status-row"><span>关闭</span><b data-stat="closedLabs">0</b></div>
+        <div class="status-row"><span>截止</span><b data-stat="endedLabs">0</b></div>
+      </section>
+      <section class="panel">
+        <h2>数据库要点</h2>
+        <p>核心实体：AppUser、Teacher、Student、Course、LabProject、CourseStudent、Report、AuditLog。Report 通过 (LabID, SNO) 唯一约束保证一人一份。所有写操作均使用事务，关键索引覆盖按课程查实验、按实验查报告。</p>
+      </section>
+    </div>
+
+    <section class="panel">
+      <div class="toolbar">
+        <h2>用户管理</h2>
+        <button data-action="open-user">新增用户</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>用户名</th><th>姓名</th><th>角色</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody data-list="users"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <h2>课程一览</h2>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>课程名</th><th>学期</th><th>教师</th><th>学生数</th><th>实验数</th><th>目录</th><th>创建时间</th></tr></thead>
+          <tbody data-list="courses"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <h2>审计日志</h2>
+        <div class="actions">
+          <button data-action="toggle-audit">展开</button>
+          <button data-action="refresh-audit" class="secondary" disabled>刷新</button>
+        </div>
+      </div>
+      <div class="table-wrap" data-section="audit" hidden>
+        <table>
+          <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>详情</th></tr></thead>
+          <tbody data-list="audit"></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</template>
+
+<!-- 模板：教师 -->
+<template id="tpl-teacher">
+  <section class="page">
+    <header class="page-head">
+      <div>
+        <h1>教师工作台</h1>
+        <p>导入实验课信息表，管理实验项目状态，查看和下载学生提交的实验报告。</p>
+      </div>
+    </header>
+
+    <section class="panel">
+      <h2>导入实验课信息</h2>
+      <form data-action="import" class="form-grid">
+        <label>课程名称<input name="courseName" placeholder="数据库原理与应用实验" required></label>
+        <label>学期<input name="semester" placeholder="2025-2026-2"></label>
+        <label class="file-field">Excel 文件<input name="file" type="file" accept=".xlsx" required></label>
+        <button type="submit">导入</button>
+      </form>
+      <small class="muted">Excel 列顺序：ID、SNO、Sname、实验项目1、实验项目2 ...，系统会自动创建学生账户（初始密码 = 学号）。</small>
+    </section>
+
+    <div class="split">
+      <section class="panel">
+        <div class="toolbar">
+          <h2>我的课程</h2>
+          <div class="actions">
+            <button data-action="export-grades" class="secondary" disabled>导出成绩 Excel</button>
+            <button data-action="refresh-courses" class="secondary">刷新</button>
+          </div>
+        </div>
+        <div class="list" data-list="courses"></div>
+      </section>
+      <section class="panel">
+        <div class="toolbar">
+          <h2>实验项目</h2>
+          <span class="muted" data-slot="currentCourse">未选择课程</span>
+        </div>
+        <div class="list" data-list="labs"></div>
+      </section>
+    </div>
+
+    <section class="panel reports-panel">
+      <div class="toolbar toolbar-reports">
+        <div>
+          <h2>实验报告</h2>
+          <small class="muted">当前实验项目：<span data-slot="currentLab">未选择</span></small>
+        </div>
+        <button class="cta" data-action="download-zip" disabled>📦 打包下载全部报告 (ZIP)</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>学号</th><th>姓名</th><th>文件</th><th>大小</th><th>提交时间</th><th>成绩</th><th>评语</th><th>操作</th></tr></thead>
+          <tbody data-list="reports"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <h2>学生名单</h2>
+        <span class="muted" data-slot="studentCount">0 人</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>学号</th><th>姓名</th><th>班级</th></tr></thead>
+          <tbody data-list="students"></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</template>
+
+<!-- 模板：学生 -->
+<template id="tpl-student">
+  <section class="page">
+    <header class="page-head">
+      <div>
+        <h1>我的实验报告</h1>
+        <p>选择一个开放中的实验项目，上传 PDF 实验报告（≤ 8MB）。系统会按“学号-姓名-实验项目名.pdf”保存。</p>
+      </div>
+    </header>
+
+    <section class="panel">
+      <div class="toolbar">
+        <h2>我的课程</h2>
+        <button data-action="refresh-courses" class="secondary">刷新</button>
+      </div>
+      <div class="list" data-list="courses"></div>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <h2>实验项目</h2>
+        <span class="muted" data-slot="currentCourse">未选择课程</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>实验项目</th><th>状态</th><th>截止时间</th><th>提交</th><th>成绩</th><th>教师评语</th><th>操作</th></tr></thead>
+          <tbody data-list="labs"></tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</template>
+
+<!-- 通用模态框 -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-card">
+    <header><h3 data-slot="title">标题</h3><button class="link" data-modal-close>×</button></header>
+    <div data-slot="body"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<script src="/assets/app.js" defer></script>
+</body>
+</html>
